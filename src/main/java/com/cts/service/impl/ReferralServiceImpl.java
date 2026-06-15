@@ -14,11 +14,14 @@ import com.cts.entity.HealthRecord;
 import com.cts.entity.MedicalReferral;
 import com.cts.enums.NotificationCategory;
 import com.cts.enums.ReferralStatus;
+import com.cts.enums.Role;
+import com.cts.exception.AccessForbiddenException;
 import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.ReferralMapper;
 import com.cts.repository.HealthRecordRepository;
 import com.cts.repository.MedicalReferralRepository;
 import com.cts.repository.spec.ReferralSpecification;
+import com.cts.security.CurrentUser;
 import com.cts.service.AuditLogService;
 import com.cts.service.NotificationService;
 import com.cts.service.ReferralService;
@@ -36,6 +39,7 @@ public class ReferralServiceImpl implements ReferralService {
     private final ReferralMapper referralMapper;
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
+    private final CurrentUser currentUser;
 
     private static final String ENTITY_TYPE = "MedicalReferral";
 
@@ -44,14 +48,11 @@ public class ReferralServiceImpl implements ReferralService {
     public ReferralResponse createReferral(ReferralRequest request) {
         log.info("Creating referral for employee {} from health record {}",
                 request.getEmployeeId(), request.getHealthRecordId());
-        // PII: read access restricted to OHNurse/EHSManager/self - enforced in security step
 
-        // Story 22: HealthRecordID must reference a valid health record
         HealthRecord record = healthRecordRepository.findById(request.getHealthRecordId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Health record not found with id: " + request.getHealthRecordId()));
 
-        // Story 22: EmployeeID must match the linked health record's employee
         if (!request.getEmployeeId().equals(record.getEmployeeId())) {
             throw new IllegalArgumentException(
                     "EmployeeID must match the EmployeeID on the linked health record ("
@@ -59,10 +60,10 @@ public class ReferralServiceImpl implements ReferralService {
         }
 
         MedicalReferral referral = referralMapper.toEntity(request);
-        referral.setStatus(ReferralStatus.REFERRED); // lifecycle start
+        referral.setStatus(ReferralStatus.REFERRED);
 
         MedicalReferral saved = referralRepository.save(referral);
-        auditLogService.record(saved.getEmployeeId(), "CREATE_REFERRAL", ENTITY_TYPE, saved.getReferralId());
+        auditLogService.record(currentUser.id(), "CREATE_REFERRAL", ENTITY_TYPE, saved.getReferralId());
 
         log.info("Referral created with id: {}", saved.getReferralId());
         return referralMapper.toResponse(saved);
@@ -71,15 +72,22 @@ public class ReferralServiceImpl implements ReferralService {
     @Override
     @Transactional(readOnly = true)
     public ReferralResponse getReferralById(Long referralId) {
-        // PII: enforce access in security step
-        return referralMapper.toResponse(findOrThrow(referralId));
+        MedicalReferral referral = findOrThrow(referralId);
+        enforcePii(referral.getEmployeeId());   // Story 22 PII
+        return referralMapper.toResponse(referral);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<ReferralResponse> searchReferrals(Long employeeId, Long healthRecordId, ReferralStatus status,
                                                   String referredToSpeciality, LocalDate fromDate, LocalDate toDate) {
-        var spec = ReferralSpecification.build(employeeId, healthRecordId, status, referredToSpeciality, fromDate, toDate);
+        // Story 22 PII: non-privileged callers can only see their own referrals
+        Long effectiveEmployeeId = employeeId;
+        if (!currentUser.hasAnyRole(Role.OH_NURSE, Role.EHS_MANAGER)) {
+            effectiveEmployeeId = currentUser.id();
+        }
+        var spec = ReferralSpecification.build(
+                effectiveEmployeeId, healthRecordId, status, referredToSpeciality, fromDate, toDate);
         return referralRepository.findAll(spec).stream()
                 .map(referralMapper::toResponse).collect(Collectors.toList());
     }
@@ -91,7 +99,6 @@ public class ReferralServiceImpl implements ReferralService {
         MedicalReferral referral = findOrThrow(referralId);
         validateTransition(referral.getStatus(), request.getStatus());
 
-        // Story 22: OutcomeSummary required when transitioning to Attended or Closed
         if ((request.getStatus() == ReferralStatus.ATTENDED || request.getStatus() == ReferralStatus.CLOSED)
                 && (request.getOutcomeSummary() == null || request.getOutcomeSummary().isBlank())) {
             throw new IllegalArgumentException(
@@ -103,19 +110,30 @@ public class ReferralServiceImpl implements ReferralService {
 
         referral.setStatus(request.getStatus());
         MedicalReferral updated = referralRepository.save(referral);
-        auditLogService.record(updated.getEmployeeId(),
+        auditLogService.record(currentUser.id(),
                 "UPDATE_REFERRAL_STATUS_" + request.getStatus().name(), ENTITY_TYPE, updated.getReferralId());
 
-        // Story 22: FollowUpRequired -> Notification (Category = Health) to OH Nurse
+        // Story 22: FollowUpRequired -> Notification (Category = Health)
         if (request.getStatus() == ReferralStatus.FOLLOW_UP_REQUIRED) {
             notificationService.create(
-                    updated.getEmployeeId(), // placeholder target; OH Nurse routing refined with auth
+                    updated.getEmployeeId(),
                     "Follow-up required for referral " + updated.getReferralId()
                             + " (employee " + updated.getEmployeeId() + ")",
                     NotificationCategory.HEALTH);
         }
 
         return referralMapper.toResponse(updated);
+    }
+
+    // Story 22 PII: only OHNurse/EHSManager, or the employee for their own referral
+    private void enforcePii(Long referralEmployeeId) {
+        if (currentUser.hasAnyRole(Role.OH_NURSE, Role.EHS_MANAGER)) {
+            return;
+        }
+        if (!currentUser.id().equals(referralEmployeeId)) {
+            throw new AccessForbiddenException(
+                    "Referral records are accessible only to OH Nurse, EHS Manager, or the employee themselves");
+        }
     }
 
     // Story 22 lifecycle: Referred -> Attended -> FollowUpRequired or Closed

@@ -16,4 +16,11 @@ public interface InspectionScheduleRepository
 
     // For auto-Missed detection: scheduled inspections whose planned date has passed
     List<InspectionSchedule> findByStatusAndPlannedDateBefore(InspectionStatus status, LocalDate date);
+    java.util.List<com.cts.entity.InspectionSchedule> findByStatusAndPlannedDateBetween(
+            com.cts.enums.InspectionStatus status, java.time.LocalDate from, java.time.LocalDate to);
+    
+    long countByPlannedDateBetween(java.time.LocalDate from, java.time.LocalDate to);
+    long countByStatusAndPlannedDateBetween(
+            com.cts.enums.InspectionStatus status, java.time.LocalDate from, java.time.LocalDate to);
+    
 }

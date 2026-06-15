@@ -62,6 +62,22 @@ public class GlobalExceptionHandler {
                 false, "Validation failed", fieldErrors, LocalDateTime.now());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
+    
+ // 401 - invalid login credentials (Story 10)
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiResponse<Object>> handleInvalidCredentials(InvalidCredentialsException ex) {
+        log.warn("Invalid credentials: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+    
+ // 403 - authenticated but forbidden, or login refused due to account state
+    @ExceptionHandler(AccessForbiddenException.class)
+    public ResponseEntity<ApiResponse<Object>> handleForbidden(AccessForbiddenException ex) {
+        log.warn("Forbidden: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
 
     // 400 - invalid enum value or bad argument
     @ExceptionHandler(IllegalArgumentException.class)

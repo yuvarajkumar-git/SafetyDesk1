@@ -13,14 +13,18 @@ import com.cts.dto.response.IncidentResponse;
 import com.cts.entity.IncidentReport;
 import com.cts.enums.IncidentStatus;
 import com.cts.enums.IncidentType;
+import com.cts.enums.NotificationCategory;
+import com.cts.enums.Role;
 import com.cts.enums.Severity;
 import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.IncidentMapper;
 import com.cts.repository.IncidentReportRepository;
 import com.cts.repository.UserRepository;
 import com.cts.repository.spec.IncidentSpecification;
+import com.cts.security.CurrentUser;
 import com.cts.service.AuditLogService;
 import com.cts.service.IncidentService;
+import com.cts.service.NotificationRouter;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,26 +38,38 @@ public class IncidentServiceImpl implements IncidentService {
     private final UserRepository userRepository;
     private final IncidentMapper incidentMapper;
     private final AuditLogService auditLogService;
+    private final CurrentUser currentUser;
+    private final NotificationRouter notificationRouter;
 
     private static final String ENTITY_TYPE = "IncidentReport";
 
     @Override
     @Transactional
     public IncidentResponse createIncident(IncidentRequest request) {
-        log.info("Creating incident reported by user: {}", request.getReportedById());
-
-        // Validate the reporter exists
-        if (!userRepository.existsById(request.getReportedById())) {
-            throw new ResourceNotFoundException(
-                    "User not found with id: " + request.getReportedById());
-        }
+        // Story 12: ReportedByID comes from the authenticated user, not the request body
+        Long reporterId = currentUser.id();
+        log.info("Creating incident reported by authenticated user: {}", reporterId);
 
         IncidentReport incident = incidentMapper.toEntity(request);
-        // New incidents always start at the beginning of the lifecycle
+        incident.setReportedById(reporterId);
         incident.setStatus(IncidentStatus.REPORTED);
 
         IncidentReport saved = incidentRepository.save(incident);
-        auditLogService.record(saved.getReportedById(), "CREATE_INCIDENT", ENTITY_TYPE, saved.getIncidentId());
+        auditLogService.record(reporterId, "CREATE_INCIDENT", ENTITY_TYPE, saved.getIncidentId());
+
+        // Story 24: new incident -> notify Safety Officers at the incident's site
+        notificationRouter.notifyRoleAtSite(Role.SAFETY_OFFICER, saved.getSiteId(),
+                "New incident reported (#" + saved.getIncidentId() + ", " + saved.getIncidentType().getLabel()
+                        + ") at site " + saved.getSiteId(),
+                NotificationCategory.INCIDENT);
+
+        // Story 24: Serious/Fatal -> escalate to EHS Manager
+        if (saved.getSeverity() == Severity.SERIOUS || saved.getSeverity() == Severity.FATAL) {
+            notificationRouter.notifyRole(Role.EHS_MANAGER,
+                    "ESCALATION: " + saved.getSeverity().getLabel() + " incident #" + saved.getIncidentId()
+                            + " reported at site " + saved.getSiteId(),
+                    NotificationCategory.INCIDENT);
+        }
 
         log.info("Incident created with id: {}", saved.getIncidentId());
         return incidentMapper.toResponse(saved);
@@ -83,17 +99,14 @@ public class IncidentServiceImpl implements IncidentService {
     @Transactional
     public IncidentResponse assignInvestigator(Long incidentId, InvestigatorAssignmentRequest request) {
         log.info("Assigning investigator {} to incident {}", request.getAssignedInvestigatorId(), incidentId);
-        // RBAC: only Safety Officer / EHS Manager may assign (enforced in security step)
 
         IncidentReport incident = findIncidentOrThrow(incidentId);
 
-        // Investigator must be a real user
         if (!userRepository.existsById(request.getAssignedInvestigatorId())) {
             throw new ResourceNotFoundException(
                     "Investigator (User) not found with id: " + request.getAssignedInvestigatorId());
         }
 
-        // Lifecycle guard: can only assign from REPORTED
         if (incident.getStatus() != IncidentStatus.REPORTED) {
             throw new IllegalArgumentException(
                     "Investigator can only be assigned when status is Reported. Current status: "
@@ -104,8 +117,13 @@ public class IncidentServiceImpl implements IncidentService {
         incident.setStatus(IncidentStatus.UNDER_INVESTIGATION);
         IncidentReport updated = incidentRepository.save(incident);
 
-        auditLogService.record(updated.getAssignedInvestigatorId(),
+        auditLogService.record(currentUser.id(),
                 "ASSIGN_INVESTIGATOR", ENTITY_TYPE, updated.getIncidentId());
+
+        // Story 24: investigation assigned -> notify the assigned investigator
+        notificationRouter.notifyUser(updated.getAssignedInvestigatorId(),
+                "You have been assigned as investigator for incident #" + updated.getIncidentId(),
+                NotificationCategory.INCIDENT);
 
         log.info("Investigator assigned; incident {} now UnderInvestigation", incidentId);
         return incidentMapper.toResponse(updated);
@@ -115,7 +133,6 @@ public class IncidentServiceImpl implements IncidentService {
     @Transactional
     public IncidentResponse updateStatus(Long incidentId, IncidentStatus newStatus) {
         log.info("Updating incident {} status to {}", incidentId, newStatus);
-        // RBAC: only Safety Officer / EHS Manager may change status (enforced in security step)
 
         IncidentReport incident = findIncidentOrThrow(incidentId);
         validateTransition(incident.getStatus(), newStatus);
@@ -123,19 +140,18 @@ public class IncidentServiceImpl implements IncidentService {
         incident.setStatus(newStatus);
         IncidentReport updated = incidentRepository.save(incident);
 
-        auditLogService.record(updated.getReportedById(),
+        auditLogService.record(currentUser.id(),
                 "UPDATE_INCIDENT_STATUS_" + newStatus.name(), ENTITY_TYPE, updated.getIncidentId());
 
         return incidentMapper.toResponse(updated);
     }
 
-    // Enforces the Story 12 lifecycle: Reported -> UnderInvestigation -> CAPAAssigned -> Closed
     private void validateTransition(IncidentStatus current, IncidentStatus next) {
         boolean ok = switch (current) {
             case REPORTED -> next == IncidentStatus.UNDER_INVESTIGATION;
             case UNDER_INVESTIGATION -> next == IncidentStatus.CAPA_ASSIGNED || next == IncidentStatus.CLOSED;
             case CAPA_ASSIGNED -> next == IncidentStatus.CLOSED;
-            case CLOSED -> false; // terminal
+            case CLOSED -> false;
         };
         if (!ok) {
             throw new IllegalArgumentException(

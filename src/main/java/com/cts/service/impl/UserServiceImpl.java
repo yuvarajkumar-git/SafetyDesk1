@@ -3,6 +3,7 @@ package com.cts.service.impl;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
     private final AuditLogService auditLogService;
+    private final PasswordEncoder passwordEncoder;
 
     private static final String ENTITY_TYPE = "User";
 
@@ -45,6 +47,10 @@ public class UserServiceImpl implements UserService {
         }
 
         User user = userMapper.toEntity(request);
+
+        // Story 9/10: never store plain-text passwords - hash with BCrypt before saving
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+
         User saved = userRepository.save(user);
 
         // Story 9: registration must generate an audit log entry

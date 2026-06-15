@@ -24,4 +24,6 @@ public interface InspectionService {
     InspectionResponse updateStatus(Long scheduleId, InspectionStatus newStatus);
 
     int markMissedInspections();
+
+    int remindUpcomingInspections(int withinDays);
 }

@@ -16,7 +16,9 @@ import com.cts.entity.InspectionSchedule;
 import com.cts.enums.FindingStatus;
 import com.cts.enums.FindingType;
 import com.cts.enums.InspectionStatus;
+import com.cts.enums.NotificationCategory;
 import com.cts.enums.RiskLevel;
+import com.cts.enums.Role;
 import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.FindingMapper;
 import com.cts.repository.InspectionFindingRepository;
@@ -25,6 +27,7 @@ import com.cts.repository.UserRepository;
 import com.cts.repository.spec.FindingSpecification;
 import com.cts.service.AuditLogService;
 import com.cts.service.FindingService;
+import com.cts.service.NotificationRouter;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +42,7 @@ public class FindingServiceImpl implements FindingService {
     private final UserRepository userRepository;
     private final FindingMapper findingMapper;
     private final AuditLogService auditLogService;
+    private final NotificationRouter notificationRouter;
 
     private static final String ENTITY_TYPE = "InspectionFinding";
 
@@ -59,11 +63,9 @@ public class FindingServiceImpl implements FindingService {
         return created;
     }
 
-    // Shared creation logic for single + batch
     private InspectionFinding persistNewFinding(FindingRequest request) {
         log.info("Recording finding for schedule {}", request.getScheduleId());
 
-        // Story 18: ScheduleID must reference a Completed inspection
         InspectionSchedule schedule = inspectionRepository.findById(request.getScheduleId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Inspection not found with id: " + request.getScheduleId()));
@@ -73,25 +75,26 @@ public class FindingServiceImpl implements FindingService {
                             + schedule.getStatus().getLabel());
         }
 
-        // AssignedToID must reference a valid user
         if (!userRepository.existsById(request.getAssignedToId())) {
             throw new ResourceNotFoundException("Assignee (User) not found with id: " + request.getAssignedToId());
         }
 
-        // Story 18: DueDate required for NonConformance, optional otherwise
         if (request.getFindingType() == FindingType.NON_CONFORMANCE && request.getDueDate() == null) {
             throw new IllegalArgumentException("DueDate is required for NonConformance findings");
         }
 
         InspectionFinding finding = findingMapper.toEntity(request);
-        finding.setStatus(FindingStatus.OPEN); // lifecycle start
+        finding.setStatus(FindingStatus.OPEN);
         InspectionFinding saved = findingRepository.save(finding);
         auditLogService.record(saved.getAssignedToId(), "CREATE_FINDING", ENTITY_TYPE, saved.getFindingId());
 
-        // Story 18: RiskLevel = Critical -> immediate escalation to EHS Manager
+        // Story 24: RiskLevel = Critical -> immediate escalation to EHS Manager
         if (saved.getRiskLevel() == RiskLevel.CRITICAL) {
             log.warn("CRITICAL finding {} raised - escalation required", saved.getFindingId());
-            // NOTIFY: critical finding -> escalate to EHS Manager (Story 24)
+            notificationRouter.notifyRole(Role.EHS_MANAGER,
+                    "CRITICAL finding #" + saved.getFindingId() + " raised at " + saved.getLocation()
+                            + " (schedule " + saved.getScheduleId() + ")",
+                    NotificationCategory.INSPECTION);
         }
 
         return saved;
@@ -130,11 +133,9 @@ public class FindingServiceImpl implements FindingService {
     @Override
     @Transactional
     public int markOverdueFindings() {
-        // Story 18: auto-set Overdue when DueDate passed and not Closed
         List<InspectionFinding> overdue = findingRepository.findByDueDateBeforeAndStatusNotIn(
                 LocalDate.now(), List.of(FindingStatus.CLOSED, FindingStatus.OVERDUE));
         for (InspectionFinding finding : overdue) {
-            // skip findings without a due date (Observation/BestPractice may have none)
             if (finding.getDueDate() == null) {
                 continue;
             }
@@ -142,19 +143,22 @@ public class FindingServiceImpl implements FindingService {
             findingRepository.save(finding);
             auditLogService.record(finding.getAssignedToId(),
                     "FINDING_OVERDUE", ENTITY_TYPE, finding.getFindingId());
-            // NOTIFY: overdue finding -> notification (Story 24)
+
+            // Story 24: overdue finding -> Inspection notification to the assignee
+            notificationRouter.notifyUser(finding.getAssignedToId(),
+                    "Finding #" + finding.getFindingId() + " is OVERDUE (due " + finding.getDueDate() + ")",
+                    NotificationCategory.INSPECTION);
         }
         log.info("Marked {} findings as Overdue", overdue.size());
         return overdue.size();
     }
 
-    // Story 18 lifecycle: Open -> InProgress -> Closed (+ Overdue handled separately)
     private void validateTransition(FindingStatus current, FindingStatus next) {
         boolean ok = switch (current) {
             case OPEN -> next == FindingStatus.IN_PROGRESS;
             case IN_PROGRESS -> next == FindingStatus.CLOSED;
             case OVERDUE -> next == FindingStatus.IN_PROGRESS || next == FindingStatus.CLOSED;
-            case CLOSED -> false; // terminal
+            case CLOSED -> false;
         };
         if (!ok) {
             throw new IllegalArgumentException(

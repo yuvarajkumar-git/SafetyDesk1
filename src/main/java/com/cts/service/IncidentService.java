@@ -11,6 +11,7 @@ import com.cts.enums.IncidentType;
 import com.cts.enums.Severity;
 
 public interface IncidentService {
+	
 
     IncidentResponse createIncident(IncidentRequest request);
 

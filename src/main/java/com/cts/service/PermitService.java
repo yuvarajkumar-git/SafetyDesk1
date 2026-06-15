@@ -31,4 +31,6 @@ public interface PermitService {
     PermitResponse updateStatus(Long permitId, PermitStatus newStatus);
 
     int markExpiredPermits();
+
+    int remindExpiringPermits(int withinHours);
 }

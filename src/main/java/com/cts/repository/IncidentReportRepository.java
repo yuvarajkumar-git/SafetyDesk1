@@ -13,4 +13,10 @@ import com.cts.entity.IncidentReport;
 @Repository
 public interface IncidentReportRepository
         extends JpaRepository<IncidentReport, Long>, JpaSpecificationExecutor<IncidentReport> {
+	long countBySiteIdAndIncidentDateBetween(Long siteId, java.time.LocalDate from, java.time.LocalDate to);
+    long countByIncidentDateBetween(java.time.LocalDate from, java.time.LocalDate to);
+    long countByIncidentTypeAndIncidentDateBetween(
+            com.cts.enums.IncidentType type, java.time.LocalDate from, java.time.LocalDate to);
+    long countBySiteIdAndIncidentTypeAndIncidentDateBetween(
+            Long siteId, com.cts.enums.IncidentType type, java.time.LocalDate from, java.time.LocalDate to);
 }

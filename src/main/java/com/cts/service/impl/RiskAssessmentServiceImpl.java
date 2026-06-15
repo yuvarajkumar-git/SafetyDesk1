@@ -16,8 +16,8 @@ import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.RiskAssessmentMapper;
 import com.cts.repository.HazardRecordRepository;
 import com.cts.repository.RiskAssessmentRepository;
-import com.cts.repository.UserRepository;
 import com.cts.repository.spec.RiskAssessmentSpecification;
+import com.cts.security.CurrentUser;
 import com.cts.service.AuditLogService;
 import com.cts.service.RiskAssessmentService;
 
@@ -31,9 +31,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
 
     private final RiskAssessmentRepository assessmentRepository;
     private final HazardRecordRepository hazardRepository;
-    private final UserRepository userRepository;
     private final RiskAssessmentMapper assessmentMapper;
     private final AuditLogService auditLogService;
+    private final CurrentUser currentUser;
 
     private static final String ENTITY_TYPE = "RiskAssessment";
 
@@ -46,12 +46,10 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         if (!hazardRepository.existsById(request.getHazardId())) {
             throw new ResourceNotFoundException("Hazard not found with id: " + request.getHazardId());
         }
-        // AssessedByID must reference a valid user
-        if (!userRepository.existsById(request.getAssessedById())) {
-            throw new ResourceNotFoundException("Assessor (User) not found with id: " + request.getAssessedById());
-        }
 
         RiskAssessment assessment = assessmentMapper.toEntity(request);
+        // Story 16: AssessedByID from the authenticated user
+        assessment.setAssessedById(currentUser.id());
 
         // Story 16: RiskRating = Likelihood x Severity, then derive the band
         int rating = request.getLikelihood() * request.getSeverity();
@@ -63,7 +61,7 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         supersedePreviousAssessments(request.getHazardId());
 
         RiskAssessment saved = assessmentRepository.save(assessment);
-        auditLogService.record(saved.getAssessedById(), "CREATE_RISK_ASSESSMENT", ENTITY_TYPE, saved.getAssessmentId());
+        auditLogService.record(currentUser.id(), "CREATE_RISK_ASSESSMENT", ENTITY_TYPE, saved.getAssessmentId());
 
         log.info("Risk assessment created with id {} (rating {}, level {})",
                 saved.getAssessmentId(), rating, saved.getRiskLevel().getLabel());
@@ -91,7 +89,7 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     @Transactional
     public RiskAssessmentResponse approveAssessment(Long assessmentId) {
         log.info("Approving risk assessment: {}", assessmentId);
-        // RBAC: only Safety Officer / EHS Manager may approve (enforced in security step)
+        // RBAC enforced at the endpoint (SafetyOfficer / EHSManager)
 
         RiskAssessment assessment = findOrThrow(assessmentId);
 
@@ -104,7 +102,7 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
 
         assessment.setStatus(RiskAssessmentStatus.APPROVED);
         RiskAssessment updated = assessmentRepository.save(assessment);
-        auditLogService.record(updated.getAssessedById(), "APPROVE_RISK_ASSESSMENT", ENTITY_TYPE, updated.getAssessmentId());
+        auditLogService.record(currentUser.id(), "APPROVE_RISK_ASSESSMENT", ENTITY_TYPE, updated.getAssessmentId());
         return assessmentMapper.toResponse(updated);
     }
 
@@ -123,7 +121,7 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         for (RiskAssessment old : previous) {
             old.setStatus(RiskAssessmentStatus.SUPERSEDED);
             assessmentRepository.save(old);
-            auditLogService.record(old.getAssessedById(),
+            auditLogService.record(currentUser.id(),
                     "SUPERSEDE_RISK_ASSESSMENT", ENTITY_TYPE, old.getAssessmentId());
             log.info("Superseded previous assessment {} for hazard {}", old.getAssessmentId(), hazardId);
         }

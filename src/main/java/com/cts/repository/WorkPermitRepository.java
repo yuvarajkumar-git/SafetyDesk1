@@ -38,6 +38,11 @@ public interface WorkPermitRepository
             @Param("newStart") LocalDateTime newStart,
             @Param("newEnd") LocalDateTime newEnd,
             @Param("excludePermitId") Long excludePermitId);
+    
+    java.util.List<com.cts.entity.WorkPermit> findByStatusAndEndDateTimeBetween(
+            com.cts.enums.PermitStatus status, java.time.LocalDateTime from, java.time.LocalDateTime to);
+    
+    long countByStatus(com.cts.enums.PermitStatus status);
 
     // For auto-Expired detection: active permits whose end time has passed
     List<WorkPermit> findByStatusAndEndDateTimeBefore(PermitStatus status, LocalDateTime dateTime);

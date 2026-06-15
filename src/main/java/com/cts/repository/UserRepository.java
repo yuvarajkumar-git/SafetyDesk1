@@ -17,6 +17,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // Spring derives the query from the method name.
     // Used to enforce the unique-email rule before saving.
     Optional<User> findByEmail(String email);
+    
+    java.util.List<com.cts.entity.User> findByRole(com.cts.enums.Role role);
+
+    java.util.List<com.cts.entity.User> findByRoleAndSiteId(com.cts.enums.Role role, Long siteId);
 
     boolean existsByEmail(String email);
 }

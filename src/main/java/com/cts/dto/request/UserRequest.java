@@ -37,5 +37,6 @@ public class UserRequest {
     private UserStatus status;
 
     @NotBlank(message = "Password is required")
+    @com.cts.validation.ValidPassword
     private String password;
 }

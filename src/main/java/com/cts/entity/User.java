@@ -68,4 +68,13 @@ public class User extends Auditable {
     // Needed for Story 10 (Login). Never returned in responses.
     @Column(name = "password", nullable = false)
     private String password;
+    
+ // Story 10: account lockout tracking
+    @Column(name = "failed_login_attempts", nullable = false)
+    @Builder.Default
+    private int failedLoginAttempts = 0;
+
+    @Column(name = "account_locked", nullable = false)
+    @Builder.Default
+    private boolean accountLocked = false;
 }

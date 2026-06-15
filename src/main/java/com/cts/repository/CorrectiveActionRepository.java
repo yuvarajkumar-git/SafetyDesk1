@@ -19,6 +19,9 @@ public interface CorrectiveActionRepository extends JpaRepository<CorrectiveActi
     List<CorrectiveAction> findByStatus(CorrectiveActionStatus status);
 
     List<CorrectiveAction> findByDueDateBetween(LocalDate from, LocalDate to);
+    
+    long countByStatus(com.cts.enums.CorrectiveActionStatus status);
+    long count();   // inherited from JpaRepository; no need to add
 
     // For the overdue auto-detection: actions past due and not yet completed/verified
     List<CorrectiveAction> findByDueDateBeforeAndStatusNotIn(
