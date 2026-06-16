@@ -10,9 +10,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -38,9 +41,10 @@ public class IncidentReport extends Auditable {
     @Column(name = "incident_id")
     private Long incidentId;
 
-    // The user who reported it (auto-populated from authenticated user later)
-    @Column(name = "reported_by_id", nullable = false)
-    private Long reportedById;
+    // The user who reported it (FK column reported_by_id; required)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reported_by_id", nullable = false)
+    private User reportedBy;
 
     @Column(name = "site_id", nullable = false)
     private Long siteId;
@@ -65,9 +69,10 @@ public class IncidentReport extends Auditable {
     @Column(name = "severity", nullable = false)
     private Severity severity;
 
-    // Nullable until an investigator is assigned
-    @Column(name = "assigned_investigator_id")
-    private Long assignedInvestigatorId;
+    // Nullable until an investigator is assigned (FK column assigned_investigator_id)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_investigator_id")
+    private User assignedInvestigator;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)

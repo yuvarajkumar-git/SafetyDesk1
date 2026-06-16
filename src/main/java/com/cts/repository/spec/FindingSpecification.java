@@ -25,7 +25,8 @@ public final class FindingSpecification {
             var predicate = cb.conjunction();
 
             if (scheduleId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("scheduleId"), scheduleId));
+                // schedule is now a relationship -> join to its scheduleId
+                predicate = cb.and(predicate, cb.equal(root.get("schedule").get("scheduleId"), scheduleId));
             }
             if (findingType != null) {
                 predicate = cb.and(predicate, cb.equal(root.get("findingType"), findingType));
@@ -37,7 +38,8 @@ public final class FindingSpecification {
                 predicate = cb.and(predicate, cb.equal(root.get("status"), status));
             }
             if (assignedToId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("assignedToId"), assignedToId));
+                // assignedTo is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("assignedTo").get("userId"), assignedToId));
             }
             if (fromDate != null) {
                 predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("dueDate"), fromDate));

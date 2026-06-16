@@ -12,13 +12,13 @@ import com.cts.dto.request.CorrectiveActionBatchRequest;
 import com.cts.dto.request.CorrectiveActionRequest;
 import com.cts.dto.response.CorrectiveActionResponse;
 import com.cts.entity.CorrectiveAction;
+import com.cts.entity.User;
 import com.cts.enums.CorrectiveActionStatus;
 import com.cts.enums.NotificationCategory;
 import com.cts.enums.Role;
 import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.CorrectiveActionMapper;
 import com.cts.repository.CorrectiveActionRepository;
-import com.cts.repository.IncidentReportRepository;
 import com.cts.repository.UserRepository;
 import com.cts.service.AuditLogService;
 import com.cts.service.CorrectiveActionService;
@@ -33,7 +33,6 @@ import lombok.extern.slf4j.Slf4j;
 public class CorrectiveActionServiceImpl implements CorrectiveActionService {
 
     private final CorrectiveActionRepository actionRepository;
-    private final IncidentReportRepository incidentRepository;
     private final UserRepository userRepository;
     private final CorrectiveActionMapper actionMapper;
     private final AuditLogService auditLogService;
@@ -61,17 +60,12 @@ public class CorrectiveActionServiceImpl implements CorrectiveActionService {
     }
 
     private CorrectiveAction persistNewAction(CorrectiveActionRequest request) {
-        if (!incidentRepository.existsById(request.getIncidentId())) {
-            throw new ResourceNotFoundException("Incident not found with id: " + request.getIncidentId());
-        }
-        if (!userRepository.existsById(request.getAssignedToId())) {
-            throw new ResourceNotFoundException("Assignee (User) not found with id: " + request.getAssignedToId());
-        }
-
+        // Existence of incident + assignee is validated inside the mapper (loads or throws)
         CorrectiveAction action = actionMapper.toEntity(request);
         action.setStatus(CorrectiveActionStatus.OPEN);
         CorrectiveAction saved = actionRepository.save(action);
-        auditLogService.record(saved.getAssignedToId(), "CREATE_CORRECTIVE_ACTION", ENTITY_TYPE, saved.getActionId());
+        auditLogService.record(saved.getAssignedTo().getUserId(),
+                "CREATE_CORRECTIVE_ACTION", ENTITY_TYPE, saved.getActionId());
         return saved;
     }
 
@@ -84,7 +78,7 @@ public class CorrectiveActionServiceImpl implements CorrectiveActionService {
     @Override
     @Transactional(readOnly = true)
     public List<CorrectiveActionResponse> getByIncidentId(Long incidentId) {
-        return actionRepository.findByIncidentId(incidentId).stream()
+        return actionRepository.findByIncident_IncidentId(incidentId).stream()
                 .map(actionMapper::toResponse).collect(Collectors.toList());
     }
 
@@ -110,19 +104,20 @@ public class CorrectiveActionServiceImpl implements CorrectiveActionService {
             if (verifiedById == null) {
                 throw new IllegalArgumentException("VerifiedByID is required to verify a corrective action");
             }
-            if (!userRepository.existsById(verifiedById)) {
-                throw new ResourceNotFoundException("Verifier (User) not found with id: " + verifiedById);
-            }
-            if (verifiedById.equals(action.getAssignedToId())) {
+            User verifier = userRepository.findById(verifiedById)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Verifier (User) not found with id: " + verifiedById));
+            // Story 14: separation of duties - verifier must differ from assignee
+            if (verifiedById.equals(action.getAssignedTo().getUserId())) {
                 throw new IllegalArgumentException(
                         "VerifiedByID must be different from AssignedToID (separation of duties)");
             }
-            action.setVerifiedById(verifiedById);
+            action.setVerifiedBy(verifier);
         }
 
         action.setStatus(newStatus);
         CorrectiveAction updated = actionRepository.save(action);
-        auditLogService.record(updated.getAssignedToId(),
+        auditLogService.record(updated.getAssignedTo().getUserId(),
                 "UPDATE_CORRECTIVE_ACTION_STATUS_" + newStatus.name(), ENTITY_TYPE, updated.getActionId());
         return actionMapper.toResponse(updated);
     }
@@ -137,13 +132,13 @@ public class CorrectiveActionServiceImpl implements CorrectiveActionService {
         for (CorrectiveAction action : overdue) {
             action.setStatus(CorrectiveActionStatus.OVERDUE);
             actionRepository.save(action);
-            auditLogService.record(action.getAssignedToId(),
+            auditLogService.record(action.getAssignedTo().getUserId(),
                     "CORRECTIVE_ACTION_OVERDUE", ENTITY_TYPE, action.getActionId());
 
             // Story 14/24: overdue corrective action -> escalate to EHS Manager (CAPA)
             notificationRouter.notifyRole(Role.EHS_MANAGER,
                     "CAPA overdue: corrective action #" + action.getActionId()
-                            + " for incident " + action.getIncidentId()
+                            + " for incident " + action.getIncident().getIncidentId()
                             + " (due " + action.getDueDate() + ")",
                     NotificationCategory.CAPA);
         }

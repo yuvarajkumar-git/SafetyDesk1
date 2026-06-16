@@ -9,9 +9,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -42,8 +45,9 @@ public class WorkPermit extends Auditable {
     @Column(name = "permit_type", nullable = false)
     private PermitType permitType;
 
-    @Column(name = "issued_to_id", nullable = false)
-    private Long issuedToId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "issued_to_id", nullable = false)
+    private User issuedTo;
 
     @Column(name = "site_id", nullable = false)
     private Long siteId;
@@ -66,8 +70,9 @@ public class WorkPermit extends Auditable {
     @Column(name = "control_measures", length = 2000)
     private String controlMeasures;
 
-    @Column(name = "approved_by_id")
-    private Long approvedById;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approved_by_id")
+    private User approvedBy;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)

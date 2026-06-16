@@ -11,6 +11,7 @@ import com.cts.dto.request.HazardRequest;
 import com.cts.dto.request.HazardUpdateRequest;
 import com.cts.dto.response.HazardResponse;
 import com.cts.entity.HazardRecord;
+import com.cts.entity.User;
 import com.cts.enums.HazardStatus;
 import com.cts.enums.HazardType;
 import com.cts.enums.Role;
@@ -18,6 +19,7 @@ import com.cts.exception.AccessForbiddenException;
 import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.HazardMapper;
 import com.cts.repository.HazardRecordRepository;
+import com.cts.repository.UserRepository;
 import com.cts.repository.spec.HazardSpecification;
 import com.cts.security.CurrentUser;
 import com.cts.service.AuditLogService;
@@ -32,6 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 public class HazardServiceImpl implements HazardService {
 
     private final HazardRecordRepository hazardRepository;
+    private final UserRepository userRepository;
     private final HazardMapper hazardMapper;
     private final AuditLogService auditLogService;
     private final CurrentUser currentUser;
@@ -46,7 +49,11 @@ public class HazardServiceImpl implements HazardService {
         log.info("Recording hazard at site {} by user {}", request.getSiteId(), identifiedById);
 
         HazardRecord hazard = hazardMapper.toEntity(request);
-        hazard.setIdentifiedById(identifiedById);
+
+        // Override identifiedBy with the authenticated user (load to attach the relationship)
+        User identifiedBy = userRepository.findById(identifiedById)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + identifiedById));
+        hazard.setIdentifiedBy(identifiedBy);
         hazard.setStatus(HazardStatus.OPEN); // lifecycle start
 
         HazardRecord saved = hazardRepository.save(hazard);
@@ -71,7 +78,6 @@ public class HazardServiceImpl implements HazardService {
                                               LocalDate fromDate, LocalDate toDate, Pageable pageable) {
         log.info("Searching hazards (paged)");
 
-        // Story 15: SiteID scoping. Cross-site roles see all; others pinned to their own site.
         Long effectiveSiteId = siteId;
         if (!currentUser.hasAnyRole(Role.EHS_MANAGER, Role.COMPLIANCE_OFFICER, Role.ADMIN)) {
             effectiveSiteId = currentUser.siteId();
@@ -113,23 +119,21 @@ public class HazardServiceImpl implements HazardService {
         return hazardMapper.toResponse(updated);
     }
 
-    // Story 15: a site-scoped user may only touch hazards at their own site
     private void enforceSiteAccess(HazardRecord hazard) {
         if (currentUser.hasAnyRole(Role.EHS_MANAGER, Role.COMPLIANCE_OFFICER, Role.ADMIN)) {
-            return; // cross-site roles
+            return;
         }
         if (!hazard.getSiteId().equals(currentUser.siteId())) {
             throw new AccessForbiddenException("You may only access hazards for your assigned site");
         }
     }
 
-    // Story 15 lifecycle: Open -> Mitigated -> Closed, plus Recurring (reappears after mitigation)
     private void validateTransition(HazardStatus current, HazardStatus next) {
         boolean ok = switch (current) {
             case OPEN -> next == HazardStatus.MITIGATED;
             case MITIGATED -> next == HazardStatus.CLOSED || next == HazardStatus.RECURRING;
             case RECURRING -> next == HazardStatus.MITIGATED || next == HazardStatus.CLOSED;
-            case CLOSED -> next == HazardStatus.RECURRING; // a closed hazard can reappear
+            case CLOSED -> next == HazardStatus.RECURRING;
         };
         if (!ok) {
             throw new IllegalArgumentException(

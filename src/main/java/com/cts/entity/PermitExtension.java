@@ -8,9 +8,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -36,11 +39,13 @@ public class PermitExtension extends Auditable {
     @Column(name = "extension_id")
     private Long extensionId;
 
-    @Column(name = "permit_id", nullable = false)
-    private Long permitId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "permit_id", nullable = false)
+    private WorkPermit permit;
 
-    @Column(name = "requested_by_id", nullable = false)
-    private Long requestedById;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "requested_by_id", nullable = false)
+    private User requestedBy;
 
     @Column(name = "new_end_date_time", nullable = false)
     private LocalDateTime newEndDateTime;
@@ -48,8 +53,9 @@ public class PermitExtension extends Auditable {
     @Column(name = "reason", length = 1000, nullable = false)
     private String reason;
 
-    @Column(name = "approved_by_id")
-    private Long approvedById;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approved_by_id")
+    private User approvedBy;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)

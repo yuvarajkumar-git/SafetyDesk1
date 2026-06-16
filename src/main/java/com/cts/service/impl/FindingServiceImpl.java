@@ -23,7 +23,6 @@ import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.FindingMapper;
 import com.cts.repository.InspectionFindingRepository;
 import com.cts.repository.InspectionScheduleRepository;
-import com.cts.repository.UserRepository;
 import com.cts.repository.spec.FindingSpecification;
 import com.cts.service.AuditLogService;
 import com.cts.service.FindingService;
@@ -39,7 +38,6 @@ public class FindingServiceImpl implements FindingService {
 
     private final InspectionFindingRepository findingRepository;
     private final InspectionScheduleRepository inspectionRepository;
-    private final UserRepository userRepository;
     private final FindingMapper findingMapper;
     private final AuditLogService auditLogService;
     private final NotificationRouter notificationRouter;
@@ -66,6 +64,7 @@ public class FindingServiceImpl implements FindingService {
     private InspectionFinding persistNewFinding(FindingRequest request) {
         log.info("Recording finding for schedule {}", request.getScheduleId());
 
+        // Need the schedule object to validate its status; mapper will also resolve it
         InspectionSchedule schedule = inspectionRepository.findById(request.getScheduleId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Inspection not found with id: " + request.getScheduleId()));
@@ -75,25 +74,22 @@ public class FindingServiceImpl implements FindingService {
                             + schedule.getStatus().getLabel());
         }
 
-        if (!userRepository.existsById(request.getAssignedToId())) {
-            throw new ResourceNotFoundException("Assignee (User) not found with id: " + request.getAssignedToId());
-        }
-
         if (request.getFindingType() == FindingType.NON_CONFORMANCE && request.getDueDate() == null) {
             throw new IllegalArgumentException("DueDate is required for NonConformance findings");
         }
 
+        // Assignee existence is validated inside the mapper (loads or throws)
         InspectionFinding finding = findingMapper.toEntity(request);
         finding.setStatus(FindingStatus.OPEN);
         InspectionFinding saved = findingRepository.save(finding);
-        auditLogService.record(saved.getAssignedToId(), "CREATE_FINDING", ENTITY_TYPE, saved.getFindingId());
+        auditLogService.record(saved.getAssignedTo().getUserId(), "CREATE_FINDING", ENTITY_TYPE, saved.getFindingId());
 
         // Story 24: RiskLevel = Critical -> immediate escalation to EHS Manager
         if (saved.getRiskLevel() == RiskLevel.CRITICAL) {
             log.warn("CRITICAL finding {} raised - escalation required", saved.getFindingId());
             notificationRouter.notifyRole(Role.EHS_MANAGER,
                     "CRITICAL finding #" + saved.getFindingId() + " raised at " + saved.getLocation()
-                            + " (schedule " + saved.getScheduleId() + ")",
+                            + " (schedule " + saved.getSchedule().getScheduleId() + ")",
                     NotificationCategory.INSPECTION);
         }
 
@@ -125,7 +121,7 @@ public class FindingServiceImpl implements FindingService {
 
         finding.setStatus(newStatus);
         InspectionFinding updated = findingRepository.save(finding);
-        auditLogService.record(updated.getAssignedToId(),
+        auditLogService.record(updated.getAssignedTo().getUserId(),
                 "UPDATE_FINDING_STATUS_" + newStatus.name(), ENTITY_TYPE, updated.getFindingId());
         return findingMapper.toResponse(updated);
     }
@@ -141,11 +137,11 @@ public class FindingServiceImpl implements FindingService {
             }
             finding.setStatus(FindingStatus.OVERDUE);
             findingRepository.save(finding);
-            auditLogService.record(finding.getAssignedToId(),
-                    "FINDING_OVERDUE", ENTITY_TYPE, finding.getFindingId());
+            Long assigneeId = finding.getAssignedTo().getUserId();
+            auditLogService.record(assigneeId, "FINDING_OVERDUE", ENTITY_TYPE, finding.getFindingId());
 
             // Story 24: overdue finding -> Inspection notification to the assignee
-            notificationRouter.notifyUser(finding.getAssignedToId(),
+            notificationRouter.notifyUser(assigneeId,
                     "Finding #" + finding.getFindingId() + " is OVERDUE (due " + finding.getDueDate() + ")",
                     NotificationCategory.INSPECTION);
         }

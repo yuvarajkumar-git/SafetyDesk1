@@ -9,9 +9,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -39,8 +42,9 @@ public class RiskAssessment extends Auditable {
     @Column(name = "assessment_id")
     private Long assessmentId;
 
-    @Column(name = "hazard_id", nullable = false)
-    private Long hazardId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "hazard_id", nullable = false)
+    private HazardRecord hazard;
 
     @Column(name = "task_description", length = 2000)
     private String taskDescription;
@@ -69,8 +73,9 @@ public class RiskAssessment extends Auditable {
     @Column(name = "residual_risk", length = 2000)
     private String residualRisk;
 
-    @Column(name = "assessed_by_id", nullable = false)
-    private Long assessedById;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assessed_by_id", nullable = false)
+    private User assessedBy;
 
     @Column(name = "assessment_date", nullable = false)
     private LocalDate assessmentDate;

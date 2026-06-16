@@ -23,7 +23,8 @@ public final class NotificationSpecification {
             var predicate = cb.conjunction();
 
             if (userId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("userId"), userId));
+                // user is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("user").get("userId"), userId));
             }
             if (category != null) {
                 predicate = cb.and(predicate, cb.equal(root.get("category"), category));

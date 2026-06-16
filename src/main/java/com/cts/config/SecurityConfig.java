@@ -2,20 +2,20 @@ package com.cts.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import com.cts.security.JwtAuthFilter;
 
@@ -23,8 +23,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Central security config (Story 10/51).
- * 9a scope: auth + health are public; everything else needs a valid token.
- * Fine-grained role rules arrive in 9c.
+ * Auth + health + Swagger docs are public; everything else needs a valid token.
  */
 @Configuration
 @EnableWebSecurity
@@ -46,6 +45,15 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                     // --- public ---
                     .requestMatchers("/api/auth/**", "/api/health").permitAll()
+
+                    // --- Swagger / OpenAPI docs (public) ---
+                    .requestMatchers(
+                            "/swagger-ui.html",
+                            "/swagger-ui/**",
+                            "/v3/api-docs",
+                            "/v3/api-docs/**",
+                            "/v3/api-docs.yaml"
+                    ).permitAll()
 
                     // --- User management (Story 9): Admin or EHSManager only ---
                     .requestMatchers(HttpMethod.POST,   "/api/users").hasAnyRole("ADMIN", "EHS_MANAGER")
@@ -123,7 +131,7 @@ public class SecurityConfig {
                             .hasAnyRole("PTW_COORDINATOR", "SAFETY_OFFICER", "EHS_MANAGER")
                     .requestMatchers(HttpMethod.GET,  "/api/extensions/**").authenticated()
 
-                 // --- Health (Story 21): writes OHNurse/EHSManager; reads also allow self (checked in service) ---
+                    // --- Health (Story 21): writes OHNurse/EHSManager; reads also allow self (checked in service) ---
                     .requestMatchers(HttpMethod.POST, "/api/health-records/**").hasAnyRole("OH_NURSE", "EHS_MANAGER")
                     .requestMatchers(HttpMethod.PUT,  "/api/health-records/**").hasAnyRole("OH_NURSE", "EHS_MANAGER")
                     .requestMatchers(HttpMethod.GET,  "/api/health-records/**").authenticated()
@@ -135,8 +143,8 @@ public class SecurityConfig {
 
                     // --- Notifications (Story 24): any authenticated user (own notifications) ---
                     .requestMatchers("/api/notifications/**").authenticated()
-                    
-                 // --- Analytics (Story 23): EHSManager / ComplianceOfficer / Admin only ---
+
+                    // --- Analytics (Story 23): EHSManager / ComplianceOfficer / Admin only ---
                     .requestMatchers("/api/analytics/**")
                             .hasAnyRole("EHS_MANAGER", "COMPLIANCE_OFFICER", "ADMIN")
 

@@ -50,11 +50,7 @@ public class HealthRecordServiceImpl implements HealthRecordService {
         log.info("Creating {} health record for employee {}",
                 request.getAssessmentType(), request.getEmployeeId());
 
-        if (!userRepository.existsById(request.getEmployeeId())) {
-            throw new ResourceNotFoundException("Employee (User) not found with id: " + request.getEmployeeId());
-        }
-
-        // Story 21: ConductedByID must be a User with Role = OHNurse
+        // Story 21: ConductedByID must be a User with Role = OHNurse (role check needs the User)
         User conductor = userRepository.findById(request.getConductedById())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Conductor (User) not found with id: " + request.getConductedById()));
@@ -74,6 +70,7 @@ public class HealthRecordServiceImpl implements HealthRecordService {
             throw new IllegalArgumentException("NextAssessmentDate must be a future date");
         }
 
+        // Employee existence is validated inside the mapper (loads or throws)
         HealthRecord record = healthRecordMapper.toEntity(request);
         record.setStatus(HealthRecordStatus.COMPLETED);
 
@@ -83,7 +80,7 @@ public class HealthRecordServiceImpl implements HealthRecordService {
         if (saved.getFitnessDecision() == FitnessDecision.TEMPORARY_UNFIT
                 || saved.getFitnessDecision() == FitnessDecision.PERMANENTLY_UNFIT) {
             log.info("Employee {} flagged for restricted duty ({})",
-                    saved.getEmployeeId(), saved.getFitnessDecision().getLabel());
+                    saved.getEmployee().getUserId(), saved.getFitnessDecision().getLabel());
         }
 
         log.info("Health record created with id: {}", saved.getHealthRecordId());
@@ -94,7 +91,7 @@ public class HealthRecordServiceImpl implements HealthRecordService {
     @Transactional(readOnly = true)
     public HealthRecordResponse getHealthRecordById(Long healthRecordId) {
         HealthRecord record = findOrThrow(healthRecordId);
-        enforcePii(record.getEmployeeId());   // Story 21 PII
+        enforcePii(record.getEmployee().getUserId());   // Story 21 PII
         return healthRecordMapper.toResponse(record);
     }
 
@@ -105,7 +102,6 @@ public class HealthRecordServiceImpl implements HealthRecordService {
                                                           Long conductedById,
                                                           LocalDate assessmentFrom, LocalDate assessmentTo,
                                                           LocalDate nextFrom, LocalDate nextTo) {
-        // Story 21 PII: non-privileged callers can only ever see their own records
         Long effectiveEmployeeId = employeeId;
         if (!currentUser.hasAnyRole(Role.OH_NURSE, Role.EHS_MANAGER)) {
             effectiveEmployeeId = currentUser.id();
@@ -138,8 +134,8 @@ public class HealthRecordServiceImpl implements HealthRecordService {
 
         for (HealthRecord record : due) {
             notificationService.create(
-                    record.getConductedById(),
-                    "Health surveillance for employee " + record.getEmployeeId()
+                    record.getConductedBy().getUserId(),
+                    "Health surveillance for employee " + record.getEmployee().getUserId()
                             + " is due on " + record.getNextAssessmentDate(),
                     NotificationCategory.HEALTH);
         }
@@ -147,7 +143,6 @@ public class HealthRecordServiceImpl implements HealthRecordService {
         return due.size();
     }
 
-    // Story 21 PII: only OHNurse/EHSManager, or the employee for their own record
     private void enforcePii(Long recordEmployeeId) {
         if (currentUser.hasAnyRole(Role.OH_NURSE, Role.EHS_MANAGER)) {
             return;

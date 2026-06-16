@@ -9,9 +9,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -50,8 +53,9 @@ public class HazardRecord extends Auditable {
     @Column(name = "description", length = 2000)
     private String description;
 
-    @Column(name = "identified_by_id", nullable = false)
-    private Long identifiedById;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "identified_by_id", nullable = false)
+    private User identifiedBy;
 
     @Column(name = "identified_date", nullable = false)
     private LocalDate identifiedDate;

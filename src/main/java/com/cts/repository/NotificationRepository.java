@@ -13,9 +13,9 @@ import com.cts.enums.NotificationStatus;
 public interface NotificationRepository
         extends JpaRepository<Notification, Long>, JpaSpecificationExecutor<Notification> {
 
-    // For the unread-count endpoint (Story 24)
-    long countByUserIdAndStatus(Long userId, NotificationStatus status);
+    // renamed: user is now a relationship -> user.userId
+    long countByUser_UserIdAndStatus(Long userId, NotificationStatus status);
 
-    // For bulk status update - fetch the requested notifications for a user
-    List<Notification> findByNotificationIdInAndUserId(List<Long> notificationIds, Long userId);
+    // renamed: user.userId in the join; notificationId is plain on Notification
+    List<Notification> findByNotificationIdInAndUser_UserId(List<Long> notificationIds, Long userId);
 }

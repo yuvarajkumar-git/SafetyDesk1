@@ -12,16 +12,17 @@ import com.cts.enums.CorrectiveActionStatus;
 @Repository
 public interface CorrectiveActionRepository extends JpaRepository<CorrectiveAction, Long> {
 
-    List<CorrectiveAction> findByIncidentId(Long incidentId);
+    // renamed: incident is now a relationship -> traverse incident.incidentId
+    List<CorrectiveAction> findByIncident_IncidentId(Long incidentId);
 
-    List<CorrectiveAction> findByAssignedToId(Long assignedToId);
+    // renamed: assignedTo is now a relationship -> assignedTo.userId
+    List<CorrectiveAction> findByAssignedTo_UserId(Long assignedToId);
 
     List<CorrectiveAction> findByStatus(CorrectiveActionStatus status);
 
     List<CorrectiveAction> findByDueDateBetween(LocalDate from, LocalDate to);
-    
-    long countByStatus(com.cts.enums.CorrectiveActionStatus status);
-    long count();   // inherited from JpaRepository; no need to add
+
+    long countByStatus(CorrectiveActionStatus status);
 
     // For the overdue auto-detection: actions past due and not yet completed/verified
     List<CorrectiveAction> findByDueDateBeforeAndStatusNotIn(

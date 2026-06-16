@@ -8,9 +8,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -36,11 +39,13 @@ public class MedicalReferral extends Auditable {
     @Column(name = "referral_id")
     private Long referralId;
 
-    @Column(name = "health_record_id", nullable = false)
-    private Long healthRecordId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "health_record_id", nullable = false)
+    private HealthRecord healthRecord;
 
-    @Column(name = "employee_id", nullable = false)
-    private Long employeeId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "employee_id", nullable = false)
+    private User employee;
 
     @Column(name = "referral_reason", length = 1000, nullable = false)
     private String referralReason;

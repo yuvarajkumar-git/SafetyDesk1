@@ -22,10 +22,12 @@ public final class ReferralSpecification {
             var predicate = cb.conjunction();
 
             if (employeeId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("employeeId"), employeeId));
+                // employee is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("employee").get("userId"), employeeId));
             }
             if (healthRecordId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("healthRecordId"), healthRecordId));
+                // healthRecord is now a relationship -> join to its healthRecordId
+                predicate = cb.and(predicate, cb.equal(root.get("healthRecord").get("healthRecordId"), healthRecordId));
             }
             if (status != null) {
                 predicate = cb.and(predicate, cb.equal(root.get("status"), status));

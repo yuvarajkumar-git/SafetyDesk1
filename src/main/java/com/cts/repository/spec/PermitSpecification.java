@@ -37,10 +37,11 @@ public final class PermitSpecification {
                         cb.like(cb.lower(root.get("workLocation")), "%" + workLocation.toLowerCase() + "%"));
             }
             if (issuedToId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("issuedToId"), issuedToId));
+                // issuedTo is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("issuedTo").get("userId"), issuedToId));
             }
             if (approvedById != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("approvedById"), approvedById));
+                predicate = cb.and(predicate, cb.equal(root.get("approvedBy").get("userId"), approvedById));
             }
             if (fromDateTime != null) {
                 predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("startDateTime"), fromDateTime));

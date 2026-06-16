@@ -33,12 +33,12 @@ public final class HazardSpecification {
                 predicate = cb.and(predicate, cb.equal(root.get("status"), status));
             }
             if (location != null && !location.isBlank()) {
-                // case-insensitive "contains" match on location
                 predicate = cb.and(predicate,
                         cb.like(cb.lower(root.get("location")), "%" + location.toLowerCase() + "%"));
             }
             if (identifiedById != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("identifiedById"), identifiedById));
+                // identifiedBy is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("identifiedBy").get("userId"), identifiedById));
             }
             if (fromDate != null) {
                 predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("identifiedDate"), fromDate));

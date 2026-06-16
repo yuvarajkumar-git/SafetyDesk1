@@ -52,9 +52,7 @@ public class PermitServiceImpl implements PermitService {
     public PermitResponse createPermit(PermitRequest request) {
         log.info("Creating {} permit at {}", request.getPermitType(), request.getWorkLocation());
 
-        if (!userRepository.existsById(request.getIssuedToId())) {
-            throw new ResourceNotFoundException("IssuedTo (User) not found with id: " + request.getIssuedToId());
-        }
+        // IssuedTo existence is validated inside the mapper (loads or throws)
         if (!request.getEndDateTime().isAfter(request.getStartDateTime())) {
             throw new IllegalArgumentException("EndDateTime must be after StartDateTime");
         }
@@ -152,7 +150,7 @@ public class PermitServiceImpl implements PermitService {
                             + request.getApprovedById() + " has role " + approver.getRole().getLabel());
         }
 
-        permit.setApprovedById(request.getApprovedById());
+        permit.setApprovedBy(approver);
         WorkPermit updated = permitRepository.save(permit);
         auditLogService.record(currentUser.id(), "APPROVE_PERMIT", ENTITY_TYPE, updated.getPermitId());
         return permitMapper.toResponse(updated);
@@ -166,7 +164,7 @@ public class PermitServiceImpl implements PermitService {
         enforceSiteAccess(permit);
         validateTransition(permit.getStatus(), PermitStatus.ACTIVE);
 
-        if (permit.getApprovedById() == null) {
+        if (permit.getApprovedBy() == null) {
             throw new IllegalArgumentException("Permit must be approved before activation");
         }
 
@@ -203,9 +201,10 @@ public class PermitServiceImpl implements PermitService {
         for (WorkPermit permit : expired) {
             permit.setStatus(PermitStatus.EXPIRED);
             permitRepository.save(permit);
-            auditLogService.record(
-                    permit.getApprovedById() != null ? permit.getApprovedById() : permit.getIssuedToId(),
-                    "PERMIT_EXPIRED", ENTITY_TYPE, permit.getPermitId());
+            Long actorId = permit.getApprovedBy() != null
+                    ? permit.getApprovedBy().getUserId()
+                    : permit.getIssuedTo().getUserId();
+            auditLogService.record(actorId, "PERMIT_EXPIRED", ENTITY_TYPE, permit.getPermitId());
         }
         log.info("Marked {} permits as Expired", expired.size());
         return expired.size();
@@ -214,13 +213,12 @@ public class PermitServiceImpl implements PermitService {
     @Override
     @Transactional(readOnly = true)
     public int remindExpiringPermits(int withinHours) {
-        // Story 24: permit approaching EndDateTime -> expiry warning (default threshold 2h per story)
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime threshold = now.plusHours(withinHours);
         List<WorkPermit> soon = permitRepository
                 .findByStatusAndEndDateTimeBetween(PermitStatus.ACTIVE, now, threshold);
         for (WorkPermit p : soon) {
-            notificationRouter.notifyUser(p.getIssuedToId(),
+            notificationRouter.notifyUser(p.getIssuedTo().getUserId(),
                     "Permit #" + p.getPermitId() + " expires at " + p.getEndDateTime(),
                     NotificationCategory.PERMIT);
         }
@@ -236,7 +234,6 @@ public class PermitServiceImpl implements PermitService {
                 permit.getStartDateTime(), permit.getEndDateTime(), excludePermitId);
         if (!conflicts.isEmpty()) {
             WorkPermit c = conflicts.get(0);
-            // Story 24: permit conflict detected -> notify PTW Coordinators at the site
             notificationRouter.notifyRoleAtSite(Role.PTW_COORDINATOR, permit.getSiteId(),
                     "Permit conflict detected at '" + permit.getWorkLocation()
                             + "' (conflicts with active permit #" + c.getPermitId() + ")",

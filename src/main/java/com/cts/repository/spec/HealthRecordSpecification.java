@@ -26,7 +26,8 @@ public final class HealthRecordSpecification {
             var predicate = cb.conjunction();
 
             if (employeeId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("employeeId"), employeeId));
+                // employee is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("employee").get("userId"), employeeId));
             }
             if (assessmentType != null) {
                 predicate = cb.and(predicate, cb.equal(root.get("assessmentType"), assessmentType));
@@ -38,7 +39,8 @@ public final class HealthRecordSpecification {
                 predicate = cb.and(predicate, cb.equal(root.get("status"), status));
             }
             if (conductedById != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("conductedById"), conductedById));
+                // conductedBy is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("conductedBy").get("userId"), conductedById));
             }
             if (assessmentFrom != null) {
                 predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("assessmentDate"), assessmentFrom));

@@ -12,9 +12,11 @@ import com.cts.enums.InvestigationStatus;
 @Repository
 public interface IncidentInvestigationRepository extends JpaRepository<IncidentInvestigation, Long> {
 
-    List<IncidentInvestigation> findByIncidentId(Long incidentId);
+    // renamed: incident is now a relationship -> incident.incidentId
+    List<IncidentInvestigation> findByIncident_IncidentId(Long incidentId);
 
-    List<IncidentInvestigation> findByInvestigatorId(Long investigatorId);
+    // renamed: investigator is now a relationship -> investigator.userId
+    List<IncidentInvestigation> findByInvestigator_UserId(Long investigatorId);
 
     List<IncidentInvestigation> findByStatus(InvestigationStatus status);
 

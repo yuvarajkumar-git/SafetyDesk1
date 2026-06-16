@@ -13,6 +13,6 @@ import com.cts.enums.RiskAssessmentStatus;
 public interface RiskAssessmentRepository
         extends JpaRepository<RiskAssessment, Long>, JpaSpecificationExecutor<RiskAssessment> {
 
-    // Used by the "supersede previous assessment" rule
-    List<RiskAssessment> findByHazardIdAndStatus(Long hazardId, RiskAssessmentStatus status);
+    // renamed: hazard is now a relationship -> hazard.hazardId
+    List<RiskAssessment> findByHazard_HazardIdAndStatus(Long hazardId, RiskAssessmentStatus status);
 }

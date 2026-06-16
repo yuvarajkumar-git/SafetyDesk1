@@ -53,12 +53,14 @@ public class ReferralServiceImpl implements ReferralService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Health record not found with id: " + request.getHealthRecordId()));
 
-        if (!request.getEmployeeId().equals(record.getEmployeeId())) {
+        Long recordEmployeeId = record.getEmployee().getUserId();
+        if (!request.getEmployeeId().equals(recordEmployeeId)) {
             throw new IllegalArgumentException(
                     "EmployeeID must match the EmployeeID on the linked health record ("
-                            + record.getEmployeeId() + ")");
+                            + recordEmployeeId + ")");
         }
 
+        // Existence of healthRecord + employee is validated inside the mapper (loads or throws)
         MedicalReferral referral = referralMapper.toEntity(request);
         referral.setStatus(ReferralStatus.REFERRED);
 
@@ -73,7 +75,7 @@ public class ReferralServiceImpl implements ReferralService {
     @Transactional(readOnly = true)
     public ReferralResponse getReferralById(Long referralId) {
         MedicalReferral referral = findOrThrow(referralId);
-        enforcePii(referral.getEmployeeId());   // Story 22 PII
+        enforcePii(referral.getEmployee().getUserId());   // Story 22 PII
         return referralMapper.toResponse(referral);
     }
 
@@ -81,7 +83,6 @@ public class ReferralServiceImpl implements ReferralService {
     @Transactional(readOnly = true)
     public List<ReferralResponse> searchReferrals(Long employeeId, Long healthRecordId, ReferralStatus status,
                                                   String referredToSpeciality, LocalDate fromDate, LocalDate toDate) {
-        // Story 22 PII: non-privileged callers can only see their own referrals
         Long effectiveEmployeeId = employeeId;
         if (!currentUser.hasAnyRole(Role.OH_NURSE, Role.EHS_MANAGER)) {
             effectiveEmployeeId = currentUser.id();
@@ -115,17 +116,17 @@ public class ReferralServiceImpl implements ReferralService {
 
         // Story 22: FollowUpRequired -> Notification (Category = Health)
         if (request.getStatus() == ReferralStatus.FOLLOW_UP_REQUIRED) {
+            Long employeeId = updated.getEmployee().getUserId();
             notificationService.create(
-                    updated.getEmployeeId(),
+                    employeeId,
                     "Follow-up required for referral " + updated.getReferralId()
-                            + " (employee " + updated.getEmployeeId() + ")",
+                            + " (employee " + employeeId + ")",
                     NotificationCategory.HEALTH);
         }
 
         return referralMapper.toResponse(updated);
     }
 
-    // Story 22 PII: only OHNurse/EHSManager, or the employee for their own referral
     private void enforcePii(Long referralEmployeeId) {
         if (currentUser.hasAnyRole(Role.OH_NURSE, Role.EHS_MANAGER)) {
             return;
@@ -136,13 +137,12 @@ public class ReferralServiceImpl implements ReferralService {
         }
     }
 
-    // Story 22 lifecycle: Referred -> Attended -> FollowUpRequired or Closed
     private void validateTransition(ReferralStatus current, ReferralStatus next) {
         boolean ok = switch (current) {
             case REFERRED -> next == ReferralStatus.ATTENDED;
             case ATTENDED -> next == ReferralStatus.FOLLOW_UP_REQUIRED || next == ReferralStatus.CLOSED;
             case FOLLOW_UP_REQUIRED -> next == ReferralStatus.ATTENDED || next == ReferralStatus.CLOSED;
-            case CLOSED -> false; // terminal
+            case CLOSED -> false;
         };
         if (!ok) {
             throw new IllegalArgumentException(

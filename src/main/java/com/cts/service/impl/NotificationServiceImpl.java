@@ -10,11 +10,13 @@ import org.springframework.transaction.annotation.Transactional;
 import com.cts.dto.request.BulkStatusUpdateRequest;
 import com.cts.dto.response.NotificationResponse;
 import com.cts.entity.Notification;
+import com.cts.entity.User;
 import com.cts.enums.NotificationCategory;
 import com.cts.enums.NotificationStatus;
 import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.NotificationMapper;
 import com.cts.repository.NotificationRepository;
+import com.cts.repository.UserRepository;
 import com.cts.repository.spec.NotificationSpecification;
 import com.cts.service.NotificationService;
 
@@ -27,20 +29,23 @@ import lombok.extern.slf4j.Slf4j;
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final UserRepository userRepository;
     private final NotificationMapper notificationMapper;
 
     @Override
     @Transactional
     public NotificationResponse create(Long userId, String message, NotificationCategory category) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+
         Notification notification = Notification.builder()
-                .userId(userId)
+                .user(user)
                 .message(message)
                 .category(category)
                 .status(NotificationStatus.UNREAD) // always starts Unread
                 .createdDate(LocalDateTime.now())
                 .build();
         Notification saved = notificationRepository.save(notification);
-        // Story 24: every notification creation is logged (no AuditLog needed for reads/dismissals)
         log.info("Notification created: id={}, userId={}, category={}", saved.getNotificationId(), userId, category);
         return notificationMapper.toResponse(saved);
     }
@@ -70,8 +75,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     public int bulkUpdateStatus(BulkStatusUpdateRequest request) {
-        // Story 24: mark multiple notifications Read/Dismissed (scoped to the user)
-        List<Notification> notifications = notificationRepository.findByNotificationIdInAndUserId(
+        List<Notification> notifications = notificationRepository.findByNotificationIdInAndUser_UserId(
                 request.getNotificationIds(), request.getUserId());
         for (Notification n : notifications) {
             n.setStatus(request.getStatus());
@@ -85,6 +89,6 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional(readOnly = true)
     public long unreadCount(Long userId) {
-        return notificationRepository.countByUserIdAndStatus(userId, NotificationStatus.UNREAD);
+        return notificationRepository.countByUser_UserIdAndStatus(userId, NotificationStatus.UNREAD);
     }
 }

@@ -17,6 +17,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -42,15 +43,16 @@ public class IncidentInvestigation extends Auditable {
     @Column(name = "investigation_id")
     private Long investigationId;
 
-    @Column(name = "incident_id", nullable = false)
-    private Long incidentId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "incident_id", nullable = false)
+    private IncidentReport incident;
 
-    @Column(name = "investigator_id", nullable = false)
-    private Long investigatorId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "investigator_id", nullable = false)
+    private User investigator;
 
     // Multi-value: stored in a side-table "investigation_root_causes".
-    // EAGER so the list is always loaded with the entity (avoids
-    // LazyInitializationException when serializing the response).
+    // EAGER so the list is always loaded with the entity.
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "investigation_root_causes",
             joinColumns = @JoinColumn(name = "investigation_id"))

@@ -58,21 +58,18 @@ public class ExtensionServiceImpl implements ExtensionService {
                             + permit.getStatus().getLabel());
         }
 
-        if (!userRepository.existsById(request.getRequestedById())) {
-            throw new ResourceNotFoundException(
-                    "Requester (User) not found with id: " + request.getRequestedById());
-        }
-
         if (!request.getNewEndDateTime().isAfter(permit.getEndDateTime())) {
             throw new IllegalArgumentException(
                     "NewEndDateTime must be later than the permit's current EndDateTime");
         }
 
+        // Requester existence is validated inside the mapper (loads or throws)
         PermitExtension ext = extensionMapper.toEntity(request);
         ext.setStatus(ExtensionStatus.REQUESTED);
 
         PermitExtension saved = extensionRepository.save(ext);
-        auditLogService.record(saved.getRequestedById(), "REQUEST_EXTENSION", ENTITY_TYPE, saved.getExtensionId());
+        auditLogService.record(saved.getRequestedBy().getUserId(),
+                "REQUEST_EXTENSION", ENTITY_TYPE, saved.getExtensionId());
 
         // Story 24: extension request submitted -> notify approver pool (PTW Coordinators at the permit's site)
         notificationRouter.notifyRoleAtSite(Role.PTW_COORDINATOR, permit.getSiteId(),
@@ -93,7 +90,7 @@ public class ExtensionServiceImpl implements ExtensionService {
     @Override
     @Transactional(readOnly = true)
     public List<ExtensionResponse> getByPermitId(Long permitId) {
-        return extensionRepository.findByPermitId(permitId).stream()
+        return extensionRepository.findByPermit_PermitId(permitId).stream()
                 .map(extensionMapper::toResponse).collect(Collectors.toList());
     }
 
@@ -117,7 +114,7 @@ public class ExtensionServiceImpl implements ExtensionService {
         User approver = userRepository.findById(request.getApprovedById())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Approver (User) not found with id: " + request.getApprovedById()));
-        if (request.getApprovedById().equals(ext.getRequestedById())) {
+        if (request.getApprovedById().equals(ext.getRequestedBy().getUserId())) {
             throw new IllegalArgumentException(
                     "ApprovedByID must differ from RequestedByID (separation of duties)");
         }
@@ -127,16 +124,13 @@ public class ExtensionServiceImpl implements ExtensionService {
                             + request.getApprovedById() + " has role " + approver.getRole().getLabel());
         }
 
-        WorkPermit permit = permitRepository.findById(ext.getPermitId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Permit not found with id: " + ext.getPermitId()));
+        WorkPermit permit = ext.getPermit();
 
         // Story 20: re-run conflict detection for the EXTENDED window, excluding this permit itself
         List<WorkPermit> conflicts = permitRepository.findConflictingPermits(
                 permit.getWorkLocation(), PermitStatus.ACTIVE,
                 permit.getStartDateTime(), ext.getNewEndDateTime(), permit.getPermitId());
         if (!conflicts.isEmpty()) {
-            // Story 24: conflict during extension -> notify PTW Coordinators
             notificationRouter.notifyRoleAtSite(Role.PTW_COORDINATOR, permit.getSiteId(),
                     "Extension conflict for permit #" + permit.getPermitId()
                             + " (conflicts with active permit #" + conflicts.get(0).getPermitId() + ")",
@@ -146,7 +140,7 @@ public class ExtensionServiceImpl implements ExtensionService {
                             + " at location '" + permit.getWorkLocation() + "'");
         }
 
-        ext.setApprovedById(request.getApprovedById());
+        ext.setApprovedBy(approver);
         ext.setStatus(ExtensionStatus.APPROVED);
         PermitExtension savedExt = extensionRepository.save(ext);
 
@@ -170,12 +164,11 @@ public class ExtensionServiceImpl implements ExtensionService {
                     "Only a Requested extension can be rejected. Current status: " + ext.getStatus().getLabel());
         }
 
-        if (!userRepository.existsById(request.getApprovedById())) {
-            throw new ResourceNotFoundException(
-                    "Approver (User) not found with id: " + request.getApprovedById());
-        }
+        User approver = userRepository.findById(request.getApprovedById())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Approver (User) not found with id: " + request.getApprovedById()));
 
-        ext.setApprovedById(request.getApprovedById());
+        ext.setApprovedBy(approver);
         ext.setStatus(ExtensionStatus.REJECTED);
         PermitExtension saved = extensionRepository.save(ext);
         auditLogService.record(request.getApprovedById(), "REJECT_EXTENSION", ENTITY_TYPE, saved.getExtensionId());

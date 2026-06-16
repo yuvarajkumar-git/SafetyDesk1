@@ -11,7 +11,7 @@ public class NotificationMapper {
     public NotificationResponse toResponse(Notification n) {
         return NotificationResponse.builder()
                 .notificationId(n.getNotificationId())
-                .userId(n.getUserId())
+                .userId(n.getUser() != null ? n.getUser().getUserId() : null)
                 .message(n.getMessage())
                 .category(n.getCategory())
                 .status(n.getStatus())

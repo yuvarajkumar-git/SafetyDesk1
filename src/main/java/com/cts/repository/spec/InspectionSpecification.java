@@ -29,7 +29,8 @@ public final class InspectionSpecification {
                 predicate = cb.and(predicate, cb.equal(root.get("inspectionType"), inspectionType));
             }
             if (assignedOfficerId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("assignedOfficerId"), assignedOfficerId));
+                // assignedOfficer is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("assignedOfficer").get("userId"), assignedOfficerId));
             }
             if (status != null) {
                 predicate = cb.and(predicate, cb.equal(root.get("status"), status));

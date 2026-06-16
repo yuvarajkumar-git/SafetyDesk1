@@ -11,11 +11,10 @@ import com.cts.enums.Severity;
 
 /**
  * Builds dynamic WHERE conditions for incident queries (Story 12).
- * Each method returns a condition that is only applied if its value is non-null.
  */
 public final class IncidentSpecification {
 
-    private IncidentSpecification() { } // utility class - no instances
+    private IncidentSpecification() { }
 
     public static Specification<IncidentReport> build(
             Long siteId, IncidentType type, Severity severity, IncidentStatus status,
@@ -23,7 +22,7 @@ public final class IncidentSpecification {
             LocalDate fromDate, LocalDate toDate) {
 
         return (root, query, cb) -> {
-            var predicate = cb.conjunction(); // start with "always true"
+            var predicate = cb.conjunction();
 
             if (siteId != null) {
                 predicate = cb.and(predicate, cb.equal(root.get("siteId"), siteId));
@@ -38,10 +37,11 @@ public final class IncidentSpecification {
                 predicate = cb.and(predicate, cb.equal(root.get("status"), status));
             }
             if (reportedById != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("reportedById"), reportedById));
+                // reportedBy is now a relationship -> join to its userId
+                predicate = cb.and(predicate, cb.equal(root.get("reportedBy").get("userId"), reportedById));
             }
             if (assignedInvestigatorId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("assignedInvestigatorId"), assignedInvestigatorId));
+                predicate = cb.and(predicate, cb.equal(root.get("assignedInvestigator").get("userId"), assignedInvestigatorId));
             }
             if (fromDate != null) {
                 predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("incidentDate"), fromDate));

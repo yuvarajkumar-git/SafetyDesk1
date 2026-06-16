@@ -11,6 +11,7 @@ import com.cts.dto.request.IncidentRequest;
 import com.cts.dto.request.InvestigatorAssignmentRequest;
 import com.cts.dto.response.IncidentResponse;
 import com.cts.entity.IncidentReport;
+import com.cts.entity.User;
 import com.cts.enums.IncidentStatus;
 import com.cts.enums.IncidentType;
 import com.cts.enums.NotificationCategory;
@@ -51,7 +52,11 @@ public class IncidentServiceImpl implements IncidentService {
         log.info("Creating incident reported by authenticated user: {}", reporterId);
 
         IncidentReport incident = incidentMapper.toEntity(request);
-        incident.setReportedById(reporterId);
+
+        // Override the reporter with the authenticated user (load to attach the relationship)
+        User reporter = userRepository.findById(reporterId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + reporterId));
+        incident.setReportedBy(reporter);
         incident.setStatus(IncidentStatus.REPORTED);
 
         IncidentReport saved = incidentRepository.save(incident);
@@ -102,10 +107,9 @@ public class IncidentServiceImpl implements IncidentService {
 
         IncidentReport incident = findIncidentOrThrow(incidentId);
 
-        if (!userRepository.existsById(request.getAssignedInvestigatorId())) {
-            throw new ResourceNotFoundException(
-                    "Investigator (User) not found with id: " + request.getAssignedInvestigatorId());
-        }
+        User investigator = userRepository.findById(request.getAssignedInvestigatorId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Investigator (User) not found with id: " + request.getAssignedInvestigatorId()));
 
         if (incident.getStatus() != IncidentStatus.REPORTED) {
             throw new IllegalArgumentException(
@@ -113,7 +117,7 @@ public class IncidentServiceImpl implements IncidentService {
                             + incident.getStatus().getLabel());
         }
 
-        incident.setAssignedInvestigatorId(request.getAssignedInvestigatorId());
+        incident.setAssignedInvestigator(investigator);
         incident.setStatus(IncidentStatus.UNDER_INVESTIGATION);
         IncidentReport updated = incidentRepository.save(incident);
 
@@ -121,7 +125,7 @@ public class IncidentServiceImpl implements IncidentService {
                 "ASSIGN_INVESTIGATOR", ENTITY_TYPE, updated.getIncidentId());
 
         // Story 24: investigation assigned -> notify the assigned investigator
-        notificationRouter.notifyUser(updated.getAssignedInvestigatorId(),
+        notificationRouter.notifyUser(updated.getAssignedInvestigator().getUserId(),
                 "You have been assigned as investigator for incident #" + updated.getIncidentId(),
                 NotificationCategory.INCIDENT);
 

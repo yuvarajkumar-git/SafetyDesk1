@@ -52,17 +52,20 @@ public class InvestigationServiceImpl implements InvestigationService {
         }
 
         // Story 13: investigator must match the incident's assigned investigator
-        if (!request.getInvestigatorId().equals(incident.getAssignedInvestigatorId())) {
+        Long assignedInvestigatorId = incident.getAssignedInvestigator() != null
+                ? incident.getAssignedInvestigator().getUserId() : null;
+        if (!request.getInvestigatorId().equals(assignedInvestigatorId)) {
             throw new IllegalArgumentException(
                     "InvestigatorID must match the incident's assigned investigator ("
-                            + incident.getAssignedInvestigatorId() + ")");
+                            + assignedInvestigatorId + ")");
         }
 
         IncidentInvestigation investigation = investigationMapper.toEntity(request);
         investigation.setStatus(InvestigationStatus.IN_PROGRESS); // lifecycle start
 
         IncidentInvestigation saved = investigationRepository.save(investigation);
-        auditLogService.record(saved.getInvestigatorId(), "CREATE_INVESTIGATION", ENTITY_TYPE, saved.getInvestigationId());
+        auditLogService.record(saved.getInvestigator().getUserId(),
+                "CREATE_INVESTIGATION", ENTITY_TYPE, saved.getInvestigationId());
 
         log.info("Investigation created with id: {}", saved.getInvestigationId());
         return investigationMapper.toResponse(saved);
@@ -77,7 +80,7 @@ public class InvestigationServiceImpl implements InvestigationService {
     @Override
     @Transactional(readOnly = true)
     public List<InvestigationResponse> getByIncidentId(Long incidentId) {
-        return investigationRepository.findByIncidentId(incidentId).stream()
+        return investigationRepository.findByIncident_IncidentId(incidentId).stream()
                 .map(investigationMapper::toResponse).collect(Collectors.toList());
     }
 
@@ -107,7 +110,8 @@ public class InvestigationServiceImpl implements InvestigationService {
         if (request.getLessonsLearned() != null)       inv.setLessonsLearned(request.getLessonsLearned());
 
         IncidentInvestigation updated = investigationRepository.save(inv);
-        auditLogService.record(updated.getInvestigatorId(), "UPDATE_INVESTIGATION", ENTITY_TYPE, updated.getInvestigationId());
+        auditLogService.record(updated.getInvestigator().getUserId(),
+                "UPDATE_INVESTIGATION", ENTITY_TYPE, updated.getInvestigationId());
         return investigationMapper.toResponse(updated);
     }
 
@@ -116,7 +120,6 @@ public class InvestigationServiceImpl implements InvestigationService {
     public InvestigationResponse updateStatus(Long investigationId, InvestigationStatus newStatus,
                                               boolean correctiveActionsNeeded) {
         log.info("Updating investigation {} status to {}", investigationId, newStatus);
-        // RBAC: only EHS Manager may approve/reject (enforced in security step)
 
         IncidentInvestigation inv = findOrThrow(investigationId);
         validateTransition(inv.getStatus(), newStatus);
@@ -130,18 +133,16 @@ public class InvestigationServiceImpl implements InvestigationService {
 
         inv.setStatus(newStatus);
         IncidentInvestigation updated = investigationRepository.save(inv);
-        auditLogService.record(updated.getInvestigatorId(),
+        auditLogService.record(updated.getInvestigator().getUserId(),
                 "UPDATE_INVESTIGATION_STATUS_" + newStatus.name(), ENTITY_TYPE, updated.getInvestigationId());
 
         // Story 13: completing an investigation pushes the incident to CAPAAssigned if CAPA is needed
         if (newStatus == InvestigationStatus.COMPLETED && correctiveActionsNeeded) {
-            IncidentReport incident = incidentRepository.findById(inv.getIncidentId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Incident not found with id: " + inv.getIncidentId()));
-            if (incident.getStatus() == IncidentStatus.UNDER_INVESTIGATION) {
+            IncidentReport incident = updated.getIncident();
+            if (incident != null && incident.getStatus() == IncidentStatus.UNDER_INVESTIGATION) {
                 incident.setStatus(IncidentStatus.CAPA_ASSIGNED);
                 incidentRepository.save(incident);
-                auditLogService.record(incident.getReportedById(),
+                auditLogService.record(incident.getReportedBy().getUserId(),
                         "UPDATE_INCIDENT_STATUS_CAPA_ASSIGNED", "IncidentReport", incident.getIncidentId());
                 log.info("Incident {} moved to CAPAAssigned", incident.getIncidentId());
             }
@@ -150,8 +151,6 @@ public class InvestigationServiceImpl implements InvestigationService {
         return investigationMapper.toResponse(updated);
     }
 
-    // Story 13 lifecycle: InProgress -> Completed -> PendingApproval,
-    // plus EHS Manager approve/reject (PendingApproval -> Completed or back to InProgress)
     private void validateTransition(InvestigationStatus current, InvestigationStatus next) {
         boolean ok = switch (current) {
             case IN_PROGRESS -> next == InvestigationStatus.COMPLETED;

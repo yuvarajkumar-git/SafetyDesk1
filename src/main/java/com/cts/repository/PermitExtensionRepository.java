@@ -12,11 +12,13 @@ import com.cts.enums.ExtensionStatus;
 @Repository
 public interface PermitExtensionRepository extends JpaRepository<PermitExtension, Long> {
 
-    List<PermitExtension> findByPermitId(Long permitId);
+    // renamed: permit is now a relationship -> permit.permitId
+    List<PermitExtension> findByPermit_PermitId(Long permitId);
 
     List<PermitExtension> findByStatus(ExtensionStatus status);
 
-    List<PermitExtension> findByRequestedById(Long requestedById);
+    // renamed: requestedBy is now a relationship -> requestedBy.userId
+    List<PermitExtension> findByRequestedBy_UserId(Long requestedById);
 
     List<PermitExtension> findByCreatedAtBetween(LocalDateTime from, LocalDateTime to);
 }

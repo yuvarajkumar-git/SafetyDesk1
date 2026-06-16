@@ -10,12 +10,13 @@ import org.springframework.transaction.annotation.Transactional;
 import com.cts.dto.request.RiskAssessmentRequest;
 import com.cts.dto.response.RiskAssessmentResponse;
 import com.cts.entity.RiskAssessment;
+import com.cts.entity.User;
 import com.cts.enums.RiskAssessmentStatus;
 import com.cts.enums.RiskLevel;
 import com.cts.exception.ResourceNotFoundException;
 import com.cts.mapper.RiskAssessmentMapper;
-import com.cts.repository.HazardRecordRepository;
 import com.cts.repository.RiskAssessmentRepository;
+import com.cts.repository.UserRepository;
 import com.cts.repository.spec.RiskAssessmentSpecification;
 import com.cts.security.CurrentUser;
 import com.cts.service.AuditLogService;
@@ -30,7 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 public class RiskAssessmentServiceImpl implements RiskAssessmentService {
 
     private final RiskAssessmentRepository assessmentRepository;
-    private final HazardRecordRepository hazardRepository;
+    private final UserRepository userRepository;
     private final RiskAssessmentMapper assessmentMapper;
     private final AuditLogService auditLogService;
     private final CurrentUser currentUser;
@@ -42,14 +43,13 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     public RiskAssessmentResponse createAssessment(RiskAssessmentRequest request) {
         log.info("Creating risk assessment for hazard: {}", request.getHazardId());
 
-        // HazardID must reference a valid hazard
-        if (!hazardRepository.existsById(request.getHazardId())) {
-            throw new ResourceNotFoundException("Hazard not found with id: " + request.getHazardId());
-        }
-
+        // Hazard existence is validated inside the mapper (loads or throws)
         RiskAssessment assessment = assessmentMapper.toEntity(request);
+
         // Story 16: AssessedByID from the authenticated user
-        assessment.setAssessedById(currentUser.id());
+        User assessedBy = userRepository.findById(currentUser.id())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + currentUser.id()));
+        assessment.setAssessedBy(assessedBy);
 
         // Story 16: RiskRating = Likelihood x Severity, then derive the band
         int rating = request.getLikelihood() * request.getSeverity();
@@ -89,11 +89,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     @Transactional
     public RiskAssessmentResponse approveAssessment(Long assessmentId) {
         log.info("Approving risk assessment: {}", assessmentId);
-        // RBAC enforced at the endpoint (SafetyOfficer / EHSManager)
 
         RiskAssessment assessment = findOrThrow(assessmentId);
 
-        // Story 16 lifecycle: only Draft -> Approved
         if (assessment.getStatus() != RiskAssessmentStatus.DRAFT) {
             throw new IllegalArgumentException(
                     "Only a Draft assessment can be approved. Current status: "
@@ -106,7 +104,6 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         return assessmentMapper.toResponse(updated);
     }
 
-    // Story 16 thresholds: 1-4 Low, 5-9 Medium, 10-15 High, 16-25 Critical
     private RiskLevel deriveRiskLevel(int rating) {
         if (rating <= 4)  return RiskLevel.LOW;
         if (rating <= 9)  return RiskLevel.MEDIUM;
@@ -114,10 +111,10 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         return RiskLevel.CRITICAL;
     }
 
-    // Story 16: mark all currently Draft/Approved assessments for this hazard as Superseded
     private void supersedePreviousAssessments(Long hazardId) {
-        List<RiskAssessment> previous = assessmentRepository.findByHazardIdAndStatus(hazardId, RiskAssessmentStatus.DRAFT);
-        previous.addAll(assessmentRepository.findByHazardIdAndStatus(hazardId, RiskAssessmentStatus.APPROVED));
+        List<RiskAssessment> previous =
+                assessmentRepository.findByHazard_HazardIdAndStatus(hazardId, RiskAssessmentStatus.DRAFT);
+        previous.addAll(assessmentRepository.findByHazard_HazardIdAndStatus(hazardId, RiskAssessmentStatus.APPROVED));
         for (RiskAssessment old : previous) {
             old.setStatus(RiskAssessmentStatus.SUPERSEDED);
             assessmentRepository.save(old);

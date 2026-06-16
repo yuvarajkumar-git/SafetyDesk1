@@ -69,7 +69,8 @@ public class InspectionServiceImpl implements InspectionService {
         log.info("Scheduling {} recurring {} inspections at site {}",
                 request.getOccurrences(), request.getInspectionType(), request.getSiteId());
 
-        validateOfficer(request.getAssignedOfficerId());
+        // validateOfficer loads + role-checks; reuse the loaded entity for the relationship
+        User officer = validateOfficer(request.getAssignedOfficerId());
 
         List<InspectionResponse> created = new ArrayList<>();
         LocalDate date = request.getStartDate();
@@ -80,7 +81,7 @@ public class InspectionServiceImpl implements InspectionService {
             InspectionSchedule schedule = InspectionSchedule.builder()
                     .siteId(request.getSiteId())
                     .inspectionType(request.getInspectionType())
-                    .assignedOfficerId(request.getAssignedOfficerId())
+                    .assignedOfficer(officer)
                     .plannedDate(date)
                     .status(InspectionStatus.SCHEDULED)
                     .build();
@@ -143,11 +144,11 @@ public class InspectionServiceImpl implements InspectionService {
         for (InspectionSchedule schedule : overdue) {
             schedule.setStatus(InspectionStatus.MISSED);
             inspectionRepository.save(schedule);
-            auditLogService.record(schedule.getAssignedOfficerId(),
-                    "INSPECTION_MISSED", ENTITY_TYPE, schedule.getScheduleId());
+            Long officerId = schedule.getAssignedOfficer().getUserId();
+            auditLogService.record(officerId, "INSPECTION_MISSED", ENTITY_TYPE, schedule.getScheduleId());
 
             // Story 24: inspection missed -> notify the assigned Safety Officer and EHS Manager
-            notificationRouter.notifyUser(schedule.getAssignedOfficerId(),
+            notificationRouter.notifyUser(officerId,
                     "Inspection #" + schedule.getScheduleId() + " at site " + schedule.getSiteId()
                             + " was MISSED (planned " + schedule.getPlannedDate() + ")",
                     NotificationCategory.INSPECTION);
@@ -162,13 +163,12 @@ public class InspectionServiceImpl implements InspectionService {
     @Override
     @Transactional(readOnly = true)
     public int remindUpcomingInspections(int withinDays) {
-        // Story 24: inspection approaching PlannedDate -> reminder (default ~24h / 1 day)
         LocalDate today = LocalDate.now();
         LocalDate threshold = today.plusDays(withinDays);
         List<InspectionSchedule> upcoming =
                 inspectionRepository.findByStatusAndPlannedDateBetween(InspectionStatus.SCHEDULED, today, threshold);
         for (InspectionSchedule s : upcoming) {
-            notificationRouter.notifyUser(s.getAssignedOfficerId(),
+            notificationRouter.notifyUser(s.getAssignedOfficer().getUserId(),
                     "Inspection #" + s.getScheduleId() + " is due on " + s.getPlannedDate(),
                     NotificationCategory.INSPECTION);
         }
@@ -187,7 +187,8 @@ public class InspectionServiceImpl implements InspectionService {
         }
     }
 
-    private void validateOfficer(Long officerId) {
+    // now returns the loaded officer so callers can attach the relationship
+    private User validateOfficer(Long officerId) {
         User officer = userRepository.findById(officerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Officer (User) not found with id: " + officerId));
         if (officer.getRole() != Role.SAFETY_OFFICER) {
@@ -195,6 +196,7 @@ public class InspectionServiceImpl implements InspectionService {
                     "AssignedOfficer must have role SafetyOfficer. User " + officerId
                             + " has role " + officer.getRole().getLabel());
         }
+        return officer;
     }
 
     private void validatePlannedDate(InspectionType type, LocalDate plannedDate) {

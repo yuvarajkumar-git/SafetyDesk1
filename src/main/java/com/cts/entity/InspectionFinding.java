@@ -10,9 +10,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -38,8 +41,9 @@ public class InspectionFinding extends Auditable {
     @Column(name = "finding_id")
     private Long findingId;
 
-    @Column(name = "schedule_id", nullable = false)
-    private Long scheduleId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schedule_id", nullable = false)
+    private InspectionSchedule schedule;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "finding_type", nullable = false)
@@ -55,8 +59,9 @@ public class InspectionFinding extends Auditable {
     @Column(name = "risk_level", nullable = false)
     private RiskLevel riskLevel;
 
-    @Column(name = "assigned_to_id", nullable = false)
-    private Long assignedToId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_to_id", nullable = false)
+    private User assignedTo;
 
     // Required for NonConformance, optional otherwise (enforced in service)
     @Column(name = "due_date")

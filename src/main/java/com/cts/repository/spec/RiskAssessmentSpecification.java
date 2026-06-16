@@ -23,7 +23,8 @@ public final class RiskAssessmentSpecification {
             var predicate = cb.conjunction();
 
             if (hazardId != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("hazardId"), hazardId));
+                // hazard is now a relationship -> join to its hazardId
+                predicate = cb.and(predicate, cb.equal(root.get("hazard").get("hazardId"), hazardId));
             }
             if (minRating != null) {
                 predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("riskRating"), minRating));
@@ -35,7 +36,7 @@ public final class RiskAssessmentSpecification {
                 predicate = cb.and(predicate, cb.equal(root.get("status"), status));
             }
             if (assessedById != null) {
-                predicate = cb.and(predicate, cb.equal(root.get("assessedById"), assessedById));
+                predicate = cb.and(predicate, cb.equal(root.get("assessedBy").get("userId"), assessedById));
             }
             if (fromDate != null) {
                 predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("assessmentDate"), fromDate));

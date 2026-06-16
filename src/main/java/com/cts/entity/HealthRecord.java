@@ -10,9 +10,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.AllArgsConstructor;
@@ -38,8 +41,9 @@ public class HealthRecord extends Auditable {
     @Column(name = "health_record_id")
     private Long healthRecordId;
 
-    @Column(name = "employee_id", nullable = false)
-    private Long employeeId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "employee_id", nullable = false)
+    private User employee;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "assessment_type", nullable = false)
@@ -48,8 +52,9 @@ public class HealthRecord extends Auditable {
     @Column(name = "assessment_date", nullable = false)
     private LocalDate assessmentDate;
 
-    @Column(name = "conducted_by_id", nullable = false)
-    private Long conductedById;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "conducted_by_id", nullable = false)
+    private User conductedBy;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "fitness_decision", nullable = false)
